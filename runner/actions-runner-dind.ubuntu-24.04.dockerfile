@@ -12,7 +12,8 @@ ARG DOCKER_GROUP_GID=121
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update -y \
-    && apt-get install -y software-properties-common \
+    && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends software-properties-common \
     && add-apt-repository -y ppa:git-core/ppa \
     && apt-get update -y \
     && apt-get install -y --no-install-recommends \
@@ -21,10 +22,11 @@ RUN apt-get update -y \
     git \
     iptables \
     jq \
-    software-properties-common \
     sudo \
     unzip \
     zip \
+    && apt-get purge -y software-properties-common \
+    && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Runner user
