@@ -5,11 +5,11 @@ DIND_RUNNER_NAME ?= ${DOCKER_USER}/actions-runner-dind
 DIND_ROOTLESS_RUNNER_NAME ?= ${DOCKER_USER}/actions-runner-dind-rootless
 OS_IMAGE ?= ubuntu-24.04
 TARGETPLATFORM ?= $(shell arch)
-IMAGE_TAG_SUFFIX ?= -0.0.3
+IMAGE_TAG_SUFFIX ?= -0.0.4
 
-RUNNER_VERSION ?= 2.331.0
+RUNNER_VERSION ?= 2.333.1
 RUNNER_CONTAINER_HOOKS_VERSION ?= 0.8.0
-DOCKER_VERSION ?= 29.1.3
+DOCKER_VERSION ?= 29.4.0
 
 # default list of platforms for which multiarch image is built
 ifeq (${PLATFORMS}, )
