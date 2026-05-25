@@ -43,6 +43,49 @@ You can follow [this troubleshooting guide](https://docs.github.com/en/actions/h
 
 ## Changelog
 
+### 0.14.2
+
+1. Fix orphan no-permission ServiceAccount in kubernetes-novolume mode [#4455](https://github.com/actions/actions-runner-controller/pull/4455)
+1. Updates: runner to v2.334.0 [#4467](https://github.com/actions/actions-runner-controller/pull/4467)
+1. Add option to disable workqueue bucket rate limiter [#4451](https://github.com/actions/actions-runner-controller/pull/4451)
+1. Add a flag for enabling pprof on the controller manager [#4449](https://github.com/actions/actions-runner-controller/pull/4449)
+1. Add health and readiness probes to controller manager [#4459](https://github.com/actions/actions-runner-controller/pull/4459)
+1. Fix empty GVK in OwnerReferences for modern controllers [#4475](https://github.com/actions/actions-runner-controller/pull/4475)
+1. Fix: Detect init container failure in EphemeralRunner controller [#4457](https://github.com/actions/actions-runner-controller/pull/4457)
+1. Bump the actions group with 3 updates [#4483](https://github.com/actions/actions-runner-controller/pull/4483)
+1. Render empty arrays for kubernetes-novolume volumes fields [#4461](https://github.com/actions/actions-runner-controller/pull/4461)
+1. Fix secret reconciliation updates for the listener pod [#4492](https://github.com/actions/actions-runner-controller/pull/4492)
+1. Fix job execution duration when runner assign time is not set [#4472](https://github.com/actions/actions-runner-controller/pull/4472)
+1. Update CODEOWNERS [#4495](https://github.com/actions/actions-runner-controller/pull/4495)
+1. Bump Go to 1.26.2 to fix critical security vulnerabilities [#4491](https://github.com/actions/actions-runner-controller/pull/4491)
+1. Fix helm chart validation workflow [#4479](https://github.com/actions/actions-runner-controller/pull/4479)
+1. Port rate limiter to experimental charts [#4478](https://github.com/actions/actions-runner-controller/pull/4478)
+1. Bump Go to 1.26.3 [#4504](https://github.com/actions/actions-runner-controller/pull/4504)
+
+### 0.14.1
+
+1. Fix null field for resource metadata fields in experimental chart [#4419](https://github.com/actions/actions-runner-controller/pull/4419)
+1. Updates: runner to v2.333.1 [#4427](https://github.com/actions/actions-runner-controller/pull/4427)
+1. Bump actions/scaleset to [v0.3.0](https://github.com/actions/scaleset/releases/tag/v0.3.0) [#4447](https://github.com/actions/actions-runner-controller/pull/4447)
+
+### 0.14.0
+
+1. Fix ActivityId typo in error strings [#4359](https://github.com/actions/actions-runner-controller/pull/4359)
+1. Include the HTTP status code in jit error [#4361](https://github.com/actions/actions-runner-controller/pull/4361)
+1. Fix tests and generate mocks [#4384](https://github.com/actions/actions-runner-controller/pull/4384)
+1. Switch client to scaleset library for the listener and update mocks [#4383](https://github.com/actions/actions-runner-controller/pull/4383)
+1. feat: add default linux nodeSelector to listener pod [#4377](https://github.com/actions/actions-runner-controller/pull/4377)
+1. Bump Go version [#4398](https://github.com/actions/actions-runner-controller/pull/4398)
+1. Allow users to apply labels and annotations to internal resources [#4400](https://github.com/actions/actions-runner-controller/pull/4400)
+1. Moving to scaleset client for the controller [#4390](https://github.com/actions/actions-runner-controller/pull/4390)
+1. Introduce experimental chart release [#4373](https://github.com/actions/actions-runner-controller/pull/4373)
+1. Manually bump dependencies since it needs fixes related to the controller runtime API [#4406](https://github.com/actions/actions-runner-controller/pull/4406)
+1. Regenerate manifests for experimental charts [#4407](https://github.com/actions/actions-runner-controller/pull/4407)
+1. Remove actions client [#4405](https://github.com/actions/actions-runner-controller/pull/4405)
+1. Add chart-level API to customize internal resources [#4410](https://github.com/actions/actions-runner-controller/pull/4410)
+1. Shutdown the scaleset when runner is deprecated [#4404](https://github.com/actions/actions-runner-controller/pull/4404)
+1. Add multi-label support to scalesets [#4408](https://github.com/actions/actions-runner-controller/pull/4408)
+
 ### 0.13.1
 
 1. Make restart pod more flexible to different failure scenarios [#4340](https://github.com/actions/actions-runner-controller/pull/4340)

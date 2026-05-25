@@ -20,13 +20,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/actions/actions-runner-controller/apis/actions.github.com/v1alpha1"
-	"github.com/actions/actions-runner-controller/github/actions"
+	"github.com/actions/scaleset"
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -202,7 +201,7 @@ func (r *EphemeralRunnerReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 	}
 
-	if ephemeralRunner.Status.RunnerId == 0 {
+	if ephemeralRunner.Status.RunnerID == 0 {
 		log.Info("Updating ephemeral runner status with runnerId and runnerName")
 		runnerID, err := strconv.Atoi(string(secret.Data["runnerId"]))
 		if err != nil {
@@ -217,12 +216,12 @@ func (r *EphemeralRunnerReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 		runnerName := string(secret.Data["runnerName"])
 		if err := patchSubResource(ctx, r.Status(), ephemeralRunner, func(obj *v1alpha1.EphemeralRunner) {
-			obj.Status.RunnerId = runnerID
+			obj.Status.RunnerID = runnerID
 			obj.Status.RunnerName = runnerName
 		}); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to update runner status for RunnerId/RunnerName/RunnerJITConfig: %w", err)
 		}
-		ephemeralRunner.Status.RunnerId = runnerID
+		ephemeralRunner.Status.RunnerID = runnerID
 		ephemeralRunner.Status.RunnerName = runnerName
 		log.Info("Updated ephemeral runner status with runnerId and runnerName")
 	}
@@ -325,7 +324,8 @@ func (r *EphemeralRunnerReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			return ctrl.Result{}, r.deleteEphemeralRunnerOrPod(ctx, ephemeralRunner, pod, log)
 		}
 
-		if cs.State.Terminated.ExitCode == 0 {
+		switch cs.State.Terminated.ExitCode {
+		case 0:
 			log.Info("Runner container has succeeded but pod is in failed phase; Assume successful exit")
 			// If the pod is in a failed state, that means that at least one container exited with non-zero exit code.
 			// If the runner container exits with 0, we assume that the runner has finished successfully.
@@ -333,6 +333,12 @@ func (r *EphemeralRunnerReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			// drives the controller's inference of whether the job has succeeded or failed.
 			if err := r.Delete(ctx, ephemeralRunner); err != nil {
 				log.Error(err, "Failed to delete ephemeral runner after successful completion")
+				return ctrl.Result{}, err
+			}
+			return ctrl.Result{}, nil
+		case 7:
+			if err := r.markAsOutdated(ctx, ephemeralRunner, log); err != nil {
+				log.Error(err, "Failed to set ephemeral runner to phase Outdated")
 				return ctrl.Result{}, err
 			}
 			return ctrl.Result{}, nil
@@ -345,6 +351,12 @@ func (r *EphemeralRunnerReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		)
 		return ctrl.Result{}, r.deleteEphemeralRunnerOrPod(ctx, ephemeralRunner, pod, log)
 
+	case initContainerFailed(pod):
+		log.Info("Pod has a failed init container, deleting pod as failed so it can be restarted",
+			"initContainerStatuses", pod.Status.InitContainerStatuses,
+		)
+		return ctrl.Result{}, r.deleteEphemeralRunnerOrPod(ctx, ephemeralRunner, pod, log)
+
 	case cs == nil:
 		// starting, no container state yet
 		log.Info("Waiting for runner container status to be available")
@@ -354,6 +366,13 @@ func (r *EphemeralRunnerReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		log.Info("Runner container is still running; updating ephemeral runner status")
 		if err := r.updateRunStatusFromPod(ctx, ephemeralRunner, pod, log); err != nil {
 			log.Info("Failed to update ephemeral runner status. Requeue to not miss this event")
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{}, nil
+
+	case cs.State.Terminated.ExitCode == 7: // outdated
+		if err := r.markAsOutdated(ctx, ephemeralRunner, log); err != nil {
+			log.Error(err, "Failed to set ephemeral runner to phase Outdated")
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{}, nil
@@ -391,7 +410,7 @@ func (r *EphemeralRunnerReconciler) deleteEphemeralRunnerOrPod(ctx context.Conte
 			log.Error(err, "Failed to get actions client for removing the runner from the service")
 			return nil
 		}
-		if err := actionsClient.RemoveRunner(ctx, int64(ephemeralRunner.Status.RunnerId)); err != nil {
+		if err := actionsClient.RemoveRunner(ctx, int64(ephemeralRunner.Status.RunnerID)); err != nil {
 			log.Error(err, "Failed to remove the runner from the service")
 			return nil
 		}
@@ -409,12 +428,8 @@ func (r *EphemeralRunnerReconciler) deleteEphemeralRunnerOrPod(ctx context.Conte
 
 func (r *EphemeralRunnerReconciler) cleanupRunnerFromService(ctx context.Context, ephemeralRunner *v1alpha1.EphemeralRunner, log logr.Logger) (ok bool, err error) {
 	if err := r.deleteRunnerFromService(ctx, ephemeralRunner, log); err != nil {
-		actionsError := &actions.ActionsError{}
-		if !errors.As(err, &actionsError) {
-			return false, err
-		}
-
-		if actionsError.StatusCode == http.StatusBadRequest && actionsError.IsException("JobStillRunningException") {
+		if errors.Is(err, scaleset.JobStillRunningError) {
+			log.Info("Runner job is still running, cannot remove the runner from the service yet")
 			return false, nil
 		}
 
@@ -554,7 +569,7 @@ func (r *EphemeralRunnerReconciler) cleanupRunnerLinkedSecrets(ctx context.Conte
 func (r *EphemeralRunnerReconciler) markAsFailed(ctx context.Context, ephemeralRunner *v1alpha1.EphemeralRunner, errMessage string, reason string, log logr.Logger) error {
 	log.Info("Updating ephemeral runner status to Failed")
 	if err := patchSubResource(ctx, r.Status(), ephemeralRunner, func(obj *v1alpha1.EphemeralRunner) {
-		obj.Status.Phase = corev1.PodFailed
+		obj.Status.Phase = v1alpha1.EphemeralRunnerPhaseFailed
 		obj.Status.Reason = reason
 		obj.Status.Message = errMessage
 	}); err != nil {
@@ -567,6 +582,24 @@ func (r *EphemeralRunnerReconciler) markAsFailed(ctx context.Context, ephemeralR
 	}
 
 	log.Info("EphemeralRunner is marked as Failed and deleted from the service")
+	return nil
+}
+
+func (r *EphemeralRunnerReconciler) markAsOutdated(ctx context.Context, ephemeralRunner *v1alpha1.EphemeralRunner, log logr.Logger) error {
+	log.Info("Updating ephemeral runner status to Outdated")
+
+	if err := patchSubResource(ctx, r.Status(), ephemeralRunner, func(obj *v1alpha1.EphemeralRunner) {
+		obj.Status.Phase = v1alpha1.EphemeralRunnerPhaseOutdated
+		obj.Status.Reason = "Outdated"
+		obj.Status.Message = "Runner is deprecated"
+	}); err != nil {
+		return fmt.Errorf("failed to update ephemeral runner status Phase/Message: %w", err)
+	}
+
+	log.Info("Removing the runner from the service")
+	if err := r.deleteRunnerFromService(ctx, ephemeralRunner, log); err != nil {
+		return fmt.Errorf("failed to remove the runner from service: %w", err)
+	}
 	return nil
 }
 
@@ -599,7 +632,7 @@ func (r *EphemeralRunnerReconciler) deletePodAsFailed(ctx context.Context, ephem
 	return nil
 }
 
-func (r *EphemeralRunnerReconciler) createRunnerJitConfig(ctx context.Context, ephemeralRunner *v1alpha1.EphemeralRunner, log logr.Logger) (*actions.RunnerScaleSetJitRunnerConfig, error) {
+func (r *EphemeralRunnerReconciler) createRunnerJitConfig(ctx context.Context, ephemeralRunner *v1alpha1.EphemeralRunner, log logr.Logger) (*scaleset.RunnerScaleSetJitRunnerConfig, error) {
 	// Runner is not registered with the service. We need to register it first
 	log.Info("Creating ephemeral runner JIT config")
 	actionsClient, err := r.GetActionsService(ctx, ephemeralRunner)
@@ -607,7 +640,7 @@ func (r *EphemeralRunnerReconciler) createRunnerJitConfig(ctx context.Context, e
 		return nil, fmt.Errorf("failed to get actions client for generating JIT config: %w", err)
 	}
 
-	jitSettings := &actions.RunnerScaleSetJitRunnerSetting{
+	jitSettings := &scaleset.RunnerScaleSetJitRunnerSetting{
 		Name: ephemeralRunner.Name,
 	}
 
@@ -618,20 +651,14 @@ func (r *EphemeralRunnerReconciler) createRunnerJitConfig(ctx context.Context, e
 		}
 	}
 
-	jitConfig, err := actionsClient.GenerateJitRunnerConfig(ctx, jitSettings, ephemeralRunner.Spec.RunnerScaleSetId)
+	jitConfig, err := actionsClient.GenerateJitRunnerConfig(ctx, jitSettings, ephemeralRunner.Spec.RunnerScaleSetID)
 	if err == nil { // if NO error
-		log.Info("Created ephemeral runner JIT config", "runnerId", jitConfig.Runner.Id)
+		log.Info("Created ephemeral runner JIT config", "runnerId", jitConfig.Runner.ID)
 		return jitConfig, nil
 	}
 
-	actionsError := &actions.ActionsError{}
-	if !errors.As(err, &actionsError) {
+	if !errors.Is(err, scaleset.RunnerExistsError) {
 		return nil, fmt.Errorf("failed to generate JIT config with generic error: %w", err)
-	}
-
-	if actionsError.StatusCode != http.StatusConflict ||
-		!actionsError.IsException("AgentExistsException") {
-		return nil, fmt.Errorf("failed to generate JIT config with Actions service error: %w", err)
 	}
 
 	// If the runner with the name we want already exists it means:
@@ -652,10 +679,10 @@ func (r *EphemeralRunnerReconciler) createRunnerJitConfig(ctx context.Context, e
 		return nil, fmt.Errorf("%w: runner existed, retry configuration", retryableError)
 	}
 
-	log.Info("Found the runner with the same name", "runnerId", existingRunner.Id, "runnerScaleSetId", existingRunner.RunnerScaleSetId)
-	if existingRunner.RunnerScaleSetId == ephemeralRunner.Spec.RunnerScaleSetId {
+	log.Info("Found the runner with the same name", "runnerId", existingRunner.ID, "runnerScaleSetId", existingRunner.RunnerScaleSetID)
+	if existingRunner.RunnerScaleSetID == ephemeralRunner.Spec.RunnerScaleSetID {
 		log.Info("Removing the runner with the same name")
-		err := actionsClient.RemoveRunner(ctx, int64(existingRunner.Id))
+		err := actionsClient.RemoveRunner(ctx, int64(existingRunner.ID))
 		if err != nil {
 			return nil, fmt.Errorf("failed to remove runner from the service: %w", err)
 		}
@@ -731,16 +758,16 @@ func (r *EphemeralRunnerReconciler) createPod(ctx context.Context, runner *v1alp
 	}
 
 	log.Info("Created ephemeral runner pod",
-		"runnerScaleSetId", runner.Spec.RunnerScaleSetId,
+		"runnerScaleSetId", runner.Spec.RunnerScaleSetID,
 		"runnerName", runner.Status.RunnerName,
-		"runnerId", runner.Status.RunnerId,
+		"runnerId", runner.Status.RunnerID,
 		"configUrl", runner.Spec.GitHubConfigUrl,
 		"podName", newPod.Name)
 
 	return ctrl.Result{}, nil
 }
 
-func (r *EphemeralRunnerReconciler) createSecret(ctx context.Context, runner *v1alpha1.EphemeralRunner, jitConfig *actions.RunnerScaleSetJitRunnerConfig, log logr.Logger) (*corev1.Secret, error) {
+func (r *EphemeralRunnerReconciler) createSecret(ctx context.Context, runner *v1alpha1.EphemeralRunner, jitConfig *scaleset.RunnerScaleSetJitRunnerConfig, log logr.Logger) (*corev1.Secret, error) {
 	log.Info("Creating new secret for ephemeral runner")
 	jitSecret := r.newEphemeralRunnerJitSecret(runner, jitConfig)
 
@@ -776,7 +803,8 @@ func (r *EphemeralRunnerReconciler) updateRunStatusFromPod(ctx context.Context, 
 		}
 	}
 
-	phaseChanged := ephemeralRunner.Status.Phase != pod.Status.Phase
+	phase := v1alpha1.EphemeralRunnerPhase(pod.Status.Phase)
+	phaseChanged := ephemeralRunner.Status.Phase != phase
 	readyChanged := ready != ephemeralRunner.Status.Ready
 
 	if !phaseChanged && !readyChanged {
@@ -791,7 +819,7 @@ func (r *EphemeralRunnerReconciler) updateRunStatusFromPod(ctx context.Context, 
 		"ready", ready,
 	)
 	err := patchSubResource(ctx, r.Status(), ephemeralRunner, func(obj *v1alpha1.EphemeralRunner) {
-		obj.Status.Phase = pod.Status.Phase
+		obj.Status.Phase = phase
 		obj.Status.Ready = ready
 		obj.Status.Reason = pod.Status.Reason
 		obj.Status.Message = pod.Status.Message
@@ -810,13 +838,13 @@ func (r *EphemeralRunnerReconciler) deleteRunnerFromService(ctx context.Context,
 		return fmt.Errorf("failed to get actions client for runner: %w", err)
 	}
 
-	log.Info("Removing runner from the service", "runnerId", ephemeralRunner.Status.RunnerId)
-	err = client.RemoveRunner(ctx, int64(ephemeralRunner.Status.RunnerId))
+	log.Info("Removing runner from the service", "runnerId", ephemeralRunner.Status.RunnerID)
+	err = client.RemoveRunner(ctx, int64(ephemeralRunner.Status.RunnerID))
 	if err != nil {
 		return fmt.Errorf("failed to remove runner from the service: %w", err)
 	}
 
-	log.Info("Removed runner from the service", "runnerId", ephemeralRunner.Status.RunnerId)
+	log.Info("Removed runner from the service", "runnerId", ephemeralRunner.Status.RunnerID)
 	return nil
 }
 
@@ -839,4 +867,14 @@ func runnerContainerStatus(pod *corev1.Pod) *corev1.ContainerStatus {
 		}
 	}
 	return nil
+}
+
+func initContainerFailed(pod *corev1.Pod) bool {
+	for i := range pod.Status.InitContainerStatuses {
+		cs := &pod.Status.InitContainerStatuses[i]
+		if cs.State.Terminated != nil && cs.State.Terminated.ExitCode != 0 {
+			return true
+		}
+	}
+	return false
 }

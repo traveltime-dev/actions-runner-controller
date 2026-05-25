@@ -45,7 +45,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Helm
-        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4
+        uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2
         with:
           version: ${{ env.HELM_VERSION }}
 
@@ -79,7 +79,7 @@ jobs:
 
       - name: Create kind cluster
         if: steps.list-changed.outputs.changed == 'true'
-        uses: helm/kind-action@92086f6be054225fa813e0a4b13787fc9088faab
+        uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc
 
       # We need cert-manager already installed in the cluster because we assume the CRDs exist
       - name: Install cert-manager
