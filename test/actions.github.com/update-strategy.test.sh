@@ -11,6 +11,8 @@ source "${DIR}/helper.sh" || {
     exit 1
 }
 
+export VERSION="$(chart_version "${ROOT_DIR}/charts/gha-runner-scale-set-controller/Chart.yaml")"
+
 SCALE_SET_NAME="update-strategy-$(date '+%M%S')$(((RANDOM + 100) % 100 + 1))"
 SCALE_SET_NAMESPACE="arc-runners"
 WORKFLOW_FILE="arc-test-sleepy-matrix.yaml"
@@ -19,7 +21,6 @@ ARC_NAMESPACE="arc-systems"
 
 function install_arc() {
     echo "Installing ARC"
-
     helm install "${ARC_NAME}" \
         --namespace "${ARC_NAMESPACE}" \
         --create-namespace \

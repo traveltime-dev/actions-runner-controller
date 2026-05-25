@@ -15,7 +15,8 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	ghalistenerconfig "github.com/actions/actions-runner-controller/cmd/ghalistener/config"
-	"github.com/actions/actions-runner-controller/github/actions/fake"
+	scalefake "github.com/actions/actions-runner-controller/controllers/actions.github.com/multiclient/fake"
+	"github.com/actions/actions-runner-controller/controllers/actions.github.com/secretresolver"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -43,7 +44,10 @@ var _ = Describe("Test AutoScalingListener controller", func() {
 		autoscalingNS, mgr = createNamespace(GinkgoT(), k8sClient)
 		configSecret = createDefaultSecret(GinkgoT(), k8sClient, autoscalingNS.Name)
 
-		secretResolver := NewSecretResolver(mgr.GetClient(), fake.NewMultiClient())
+		secretResolver := secretresolver.New(
+			mgr.GetClient(),
+			scalefake.NewMultiClient(),
+		)
 
 		rb := ResourceBuilder{
 			SecretResolver: secretResolver,
@@ -346,7 +350,7 @@ var _ = Describe("Test AutoScalingListener controller", func() {
 				autoscalingListenerTestInterval).Should(BeEquivalentTo(rulesForListenerRole([]string{updated.Spec.EphemeralRunnerSetName})), "Role should be updated")
 		})
 
-		It("It should re-create pod and config secret whenever listener container is terminated", func() {
+		It("It should re-create pod but persist config secret whenever listener container is terminated", func() {
 			// Waiting for the pod is created
 			pod := new(corev1.Pod)
 			Eventually(
@@ -403,7 +407,7 @@ var _ = Describe("Test AutoScalingListener controller", func() {
 				autoscalingListenerTestInterval,
 			).ShouldNot(BeEquivalentTo(oldPodUID), "Pod should be re-created")
 
-			// Check if config secret is re-created
+			// Check if config secret persists (not re-created) to avoid race condition
 			Eventually(
 				func() (string, error) {
 					secret := new(corev1.Secret)
@@ -416,7 +420,7 @@ var _ = Describe("Test AutoScalingListener controller", func() {
 				},
 				autoscalingListenerTestTimeout,
 				autoscalingListenerTestInterval,
-			).ShouldNot(BeEquivalentTo(oldSecretUID), "Config secret should be re-created")
+			).Should(BeEquivalentTo(oldSecretUID), "Config secret should persist (not be re-created)")
 		})
 	})
 })
@@ -459,7 +463,7 @@ var _ = Describe("Test AutoScalingListener customization", func() {
 		autoscalingNS, mgr = createNamespace(GinkgoT(), k8sClient)
 		configSecret = createDefaultSecret(GinkgoT(), k8sClient, autoscalingNS.Name)
 
-		secretResolver := NewSecretResolver(mgr.GetClient(), fake.NewMultiClient())
+		secretResolver := secretresolver.New(mgr.GetClient(), scalefake.NewMultiClient())
 
 		rb := ResourceBuilder{
 			SecretResolver: secretResolver,
@@ -788,7 +792,7 @@ var _ = Describe("Test AutoScalingListener controller with proxy", func() {
 		ctx = context.Background()
 		autoscalingNS, mgr = createNamespace(GinkgoT(), k8sClient)
 		configSecret = createDefaultSecret(GinkgoT(), k8sClient, autoscalingNS.Name)
-		secretResolver := NewSecretResolver(mgr.GetClient(), fake.NewMultiClient())
+		secretResolver := secretresolver.New(mgr.GetClient(), scalefake.NewMultiClient())
 
 		rb := ResourceBuilder{
 			SecretResolver: secretResolver,
@@ -991,7 +995,7 @@ var _ = Describe("Test AutoScalingListener controller with template modification
 		autoscalingNS, mgr = createNamespace(GinkgoT(), k8sClient)
 		configSecret = createDefaultSecret(GinkgoT(), k8sClient, autoscalingNS.Name)
 
-		secretResolver := NewSecretResolver(mgr.GetClient(), fake.NewMultiClient())
+		secretResolver := secretresolver.New(mgr.GetClient(), scalefake.NewMultiClient())
 
 		rb := ResourceBuilder{
 			SecretResolver: secretResolver,
@@ -1094,7 +1098,7 @@ var _ = Describe("Test GitHub Server TLS configuration", func() {
 		autoscalingNS, mgr = createNamespace(GinkgoT(), k8sClient)
 		configSecret = createDefaultSecret(GinkgoT(), k8sClient, autoscalingNS.Name)
 
-		secretResolver := NewSecretResolver(mgr.GetClient(), fake.NewMultiClient())
+		secretResolver := secretresolver.New(mgr.GetClient(), scalefake.NewMultiClient())
 
 		rb := ResourceBuilder{
 			SecretResolver: secretResolver,
