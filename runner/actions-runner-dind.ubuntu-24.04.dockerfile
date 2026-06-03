@@ -88,6 +88,11 @@ RUN chmod +x /usr/bin/entrypoint-dind.sh /usr/bin/startup.sh
 # to replace the docker binary in the PATH.
 COPY docker-shim.sh /usr/local/bin/docker
 
+# Containerd socket access helper, shared between entrypoint-dind.sh and the
+# kube manifests' init container.
+COPY grant-containerd-access.sh /usr/local/bin/grant-containerd-access.sh
+RUN chmod +x /usr/local/bin/grant-containerd-access.sh
+
 # Configure hooks folder structure.
 COPY hooks /etc/arc/hooks/
 
