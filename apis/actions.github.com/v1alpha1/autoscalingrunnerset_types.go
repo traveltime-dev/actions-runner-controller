@@ -23,7 +23,6 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/actions/actions-runner-controller/hash"
 	"github.com/actions/actions-runner-controller/vault"
 	"golang.org/x/net/http/httpproxy"
 	corev1 "k8s.io/api/core/v1"
@@ -36,28 +35,26 @@ import (
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:JSONPath=".spec.minRunners",name=Minimum Runners,type=integer
 // +kubebuilder:printcolumn:JSONPath=".spec.maxRunners",name=Maximum Runners,type=integer
-// +kubebuilder:printcolumn:JSONPath=".status.currentRunners",name=Current Runners,type=integer
-// +kubebuilder:printcolumn:JSONPath=".status.state",name=State,type=string
-// +kubebuilder:printcolumn:JSONPath=".status.pendingEphemeralRunners",name=Pending Runners,type=integer
-// +kubebuilder:printcolumn:JSONPath=".status.runningEphemeralRunners",name=Running Runners,type=integer
-// +kubebuilder:printcolumn:JSONPath=".status.finishedEphemeralRunners",name=Finished Runners,type=integer
-// +kubebuilder:printcolumn:JSONPath=".status.deletingEphemeralRunners",name=Deleting Runners,type=integer
+// +kubebuilder:printcolumn:JSONPath=".status.phase",name=Phase,type=string
 
 // AutoscalingRunnerSet is the Schema for the autoscalingrunnersets API
 type AutoscalingRunnerSet struct {
-	metav1.TypeMeta   `json:",inline"`
+	metav1.TypeMeta `json:",inline"`
+	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   AutoscalingRunnerSetSpec   `json:"spec,omitempty"`
+	// +optional
+	Spec AutoscalingRunnerSetSpec `json:"spec,omitempty"`
+	// +optional
 	Status AutoscalingRunnerSetStatus `json:"status,omitempty"`
 }
 
 // AutoscalingRunnerSetSpec defines the desired state of AutoscalingRunnerSet
 type AutoscalingRunnerSetSpec struct {
-	// Required
+	// +optional
 	GitHubConfigUrl string `json:"githubConfigUrl,omitempty"`
 
-	// Required
+	// +optional
 	GitHubConfigSecret string `json:"githubConfigSecret,omitempty"`
 
 	// +optional
@@ -78,7 +75,7 @@ type AutoscalingRunnerSetSpec struct {
 	// +optional
 	VaultConfig *VaultConfig `json:"vaultConfig,omitempty"`
 
-	// Required
+	// +optional
 	Template corev1.PodTemplateSpec `json:"template,omitempty"`
 
 	// +optional
@@ -118,6 +115,9 @@ type AutoscalingRunnerSetSpec struct {
 	// +optional
 	// +kubebuilder:validation:Minimum:=0
 	MinRunners *int `json:"minRunners,omitempty"`
+
+	// +optional
+	ListenerConfig *ListenerConfig `json:"listenerConfig,omitempty"`
 }
 
 type TLSConfig struct {
@@ -315,19 +315,11 @@ type HistogramMetric struct {
 // AutoscalingRunnerSetStatus defines the observed state of AutoscalingRunnerSet
 type AutoscalingRunnerSetStatus struct {
 	// +optional
-	CurrentRunners int `json:"currentRunners"`
-
-	// +optional
 	Phase AutoscalingRunnerSetPhase `json:"phase"`
-
-	// EphemeralRunner counts separated by the stage ephemeral runners are in, taken from the EphemeralRunnerSet
-
+	// ObservedGeneration tracks the metadata.generation of this ARS at observation time,
+	// enabling detection of Pending phase when generation differs. Unset defaults to 0.
 	// +optional
-	PendingEphemeralRunners int `json:"pendingEphemeralRunners"`
-	// +optional
-	RunningEphemeralRunners int `json:"runningEphemeralRunners"`
-	// +optional
-	FailedEphemeralRunners int `json:"failedEphemeralRunners"`
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 }
 
 type AutoscalingRunnerSetPhase string
@@ -339,26 +331,6 @@ const (
 	AutoscalingRunnerSetPhaseRunning  AutoscalingRunnerSetPhase = "Running"
 	AutoscalingRunnerSetPhaseOutdated AutoscalingRunnerSetPhase = "Outdated"
 )
-
-func (ars *AutoscalingRunnerSet) Hash() string {
-	type data struct {
-		Spec   *AutoscalingRunnerSetSpec
-		Labels map[string]string
-	}
-
-	d := &data{
-		Spec:   ars.Spec.DeepCopy(),
-		Labels: ars.Labels,
-	}
-
-	return hash.ComputeTemplateHash(d)
-}
-
-func (ars *AutoscalingRunnerSet) ListenerSpecHash() string {
-	arsSpec := ars.Spec.DeepCopy()
-	spec := arsSpec
-	return hash.ComputeTemplateHash(&spec)
-}
 
 func (ars *AutoscalingRunnerSet) GitHubConfigSecret() string {
 	return ars.Spec.GitHubConfigSecret
@@ -387,28 +359,6 @@ func (ars *AutoscalingRunnerSet) VaultProxy() *ProxyConfig {
 	return nil
 }
 
-func (ars *AutoscalingRunnerSet) RunnerSetSpecHash() string {
-	type runnerSetSpec struct {
-		GitHubConfigUrl    string
-		GitHubConfigSecret string
-		RunnerGroup        string
-		RunnerScaleSetName string
-		Proxy              *ProxyConfig
-		GitHubServerTLS    *TLSConfig
-		Template           corev1.PodTemplateSpec
-	}
-	spec := &runnerSetSpec{
-		GitHubConfigUrl:    ars.Spec.GitHubConfigUrl,
-		GitHubConfigSecret: ars.Spec.GitHubConfigSecret,
-		RunnerGroup:        ars.Spec.RunnerGroup,
-		RunnerScaleSetName: ars.Spec.RunnerScaleSetName,
-		Proxy:              ars.Spec.Proxy,
-		GitHubServerTLS:    ars.Spec.GitHubServerTLS,
-		Template:           ars.Spec.Template,
-	}
-	return hash.ComputeTemplateHash(&spec)
-}
-
 // +kubebuilder:object:root=true
 
 // AutoscalingRunnerSetList contains a list of AutoscalingRunnerSet
@@ -416,8 +366,4 @@ type AutoscalingRunnerSetList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []AutoscalingRunnerSet `json:"items"`
-}
-
-func init() {
-	SchemeBuilder.Register(&AutoscalingRunnerSet{}, &AutoscalingRunnerSetList{})
 }

@@ -23,27 +23,42 @@ import (
 // EphemeralRunnerSetSpec defines the desired state of EphemeralRunnerSet
 type EphemeralRunnerSetSpec struct {
 	// Replicas is the number of desired EphemeralRunner resources in the k8s namespace.
+	// +optional
 	Replicas int `json:"replicas,omitempty"`
 	// PatchID is the unique identifier for the patch issued by the listener app
+	// +optional
 	PatchID int `json:"patchID"`
 	// EphemeralRunnerSpec is the spec of the ephemeral runner
+	// +optional
 	EphemeralRunnerSpec EphemeralRunnerSpec `json:"ephemeralRunnerSpec,omitempty"`
+	// EphemeralRunnerMetadata is the metadata to be applied to all ephemeral runners created by this set.
+	// If the EphemeralRunnerMetadata is updated, the update applies to new ephemeral runners created after the update,
+	// but does not apply to existing ephemeral runners.
 	// +optional
 	EphemeralRunnerMetadata *ResourceMeta `json:"ephemeralRunnerMetadata,omitempty"`
+	// ActionableRevision is the desired runner-spec revision. It increments whenever
+	// Spec.EphemeralRunnerSpec changes, enabling the EphemeralRunnerSet controller
+	// to detect spec updates.
+	// Unset defaults to 0.
+	// +optional
+	ActionableRevision int64 `json:"actionableRevision,omitempty"`
 }
 
 // EphemeralRunnerSetStatus defines the observed state of EphemeralRunnerSet
 type EphemeralRunnerSetStatus struct {
-	// CurrentReplicas is the number of currently running EphemeralRunner resources being managed by this EphemeralRunnerSet.
-	CurrentReplicas int `json:"currentReplicas"`
-	// +optional
-	PendingEphemeralRunners int `json:"pendingEphemeralRunners"`
-	// +optional
-	RunningEphemeralRunners int `json:"runningEphemeralRunners"`
-	// +optional
-	FailedEphemeralRunners int `json:"failedEphemeralRunners"`
 	// +optional
 	Phase EphemeralRunnerSetPhase `json:"phase"`
+	// AppliedActionableRevision is a restart-safe applied marker tracking the last successfully
+	// applied ActionableRevision value. Advances only after spec cleanup succeeds.
+	// Unset defaults to 0.
+	// +optional
+	AppliedActionableRevision int64 `json:"appliedActionableRevision,omitempty"`
+	// FinishedRunnerCleanupPatchID records the listener patch ID for which finished
+	// ephemeral runners were cleaned up. Scale-up is suppressed for the same patch ID
+	// until the listener publishes a fresh desired-state patch.
+	// Unset defaults to 0.
+	// +optional
+	FinishedRunnerCleanupPatchID int `json:"finishedRunnerCleanupPatchID,omitempty"`
 }
 
 // EphemeralRunnerSetPhase is the phase of the ephemeral runner set resource
@@ -59,18 +74,17 @@ const (
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:JSONPath=".spec.replicas",name="DesiredReplicas",type="integer"
-// +kubebuilder:printcolumn:JSONPath=".status.currentReplicas", name="CurrentReplicas",type="integer"
-// +kubebuilder:printcolumn:JSONPath=".status.pendingEphemeralRunners",name=Pending Runners,type=integer
-// +kubebuilder:printcolumn:JSONPath=".status.runningEphemeralRunners",name=Running Runners,type=integer
-// +kubebuilder:printcolumn:JSONPath=".status.finishedEphemeralRunners",name=Finished Runners,type=integer
-// +kubebuilder:printcolumn:JSONPath=".status.deletingEphemeralRunners",name=Deleting Runners,type=integer
+// +kubebuilder:printcolumn:JSONPath=".status.phase",name=Phase,type=string
 
 // EphemeralRunnerSet is the Schema for the ephemeralrunnersets API
 type EphemeralRunnerSet struct {
-	metav1.TypeMeta   `json:",inline"`
+	metav1.TypeMeta `json:",inline"`
+	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   EphemeralRunnerSetSpec   `json:"spec,omitempty"`
+	// +optional
+	Spec EphemeralRunnerSetSpec `json:"spec,omitempty"`
+	// +optional
 	Status EphemeralRunnerSetStatus `json:"status,omitempty"`
 }
 
@@ -79,7 +93,7 @@ func (ers *EphemeralRunnerSet) GitHubConfigSecret() string {
 }
 
 func (ers *EphemeralRunnerSet) GitHubConfigUrl() string {
-	return ers.Spec.EphemeralRunnerSpec.GitHubConfigUrl
+	return ers.Spec.EphemeralRunnerSpec.GitHubConfigURL
 }
 
 func (ers *EphemeralRunnerSet) GitHubProxy() *ProxyConfig {
@@ -107,8 +121,4 @@ type EphemeralRunnerSetList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []EphemeralRunnerSet `json:"items"`
-}
-
-func init() {
-	SchemeBuilder.Register(&EphemeralRunnerSet{}, &EphemeralRunnerSetList{})
 }

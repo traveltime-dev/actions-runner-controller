@@ -21,38 +21,69 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// AutoscalingListenerPhase describes whether the listener should be running.
+//
+// It is part of the spec rather than the status because it is a desired state
+// written by the AutoscalingRunnerSet controller, not an observation made by the
+// AutoscalingListener controller about itself.
+type AutoscalingListenerPhase string
+
+const (
+	// AutoscalingListenerPhaseRunning is the default. The listener controller
+	// creates and maintains the listener pod and everything it depends on.
+	AutoscalingListenerPhaseRunning AutoscalingListenerPhase = "Running"
+
+	// AutoscalingListenerPhaseStopped switches the listener off without
+	// deleting it. The listener controller tears the pod and the rest of the
+	// child resources down, so no further jobs are acquired, but the
+	// AutoscalingListener object stays as the record of a scale set that is
+	// meant to come back. Moving the phase to Running is what starts it again.
+	AutoscalingListenerPhaseStopped AutoscalingListenerPhase = "Stopped"
+)
+
+// Stopped reports whether the phase switches the listener off. The zero value
+// means Running, so listeners written before this field existed keep working.
+func (p AutoscalingListenerPhase) Stopped() bool {
+	return p == AutoscalingListenerPhaseStopped
+}
+
 // AutoscalingListenerSpec defines the desired state of AutoscalingListener
 type AutoscalingListenerSpec struct {
-	// Required
-	GitHubConfigUrl string `json:"githubConfigUrl,omitempty"`
+	// Phase controls whether the listener runs. Empty means Running.
+	// +kubebuilder:validation:Enum=Running;Stopped
+	// +optional
+	Phase AutoscalingListenerPhase `json:"phase,omitempty"`
 
-	// Required
+	// +optional
+	GitHubConfigURL string `json:"githubConfigUrl,omitempty"`
+
+	// +optional
 	GitHubConfigSecret string `json:"githubConfigSecret,omitempty"`
 
-	// Required
-	RunnerScaleSetId int `json:"runnerScaleSetId,omitempty"`
+	// +optional
+	RunnerScaleSetID int `json:"runnerScaleSetId,omitempty"`
 
-	// Required
+	// +optional
 	AutoscalingRunnerSetNamespace string `json:"autoscalingRunnerSetNamespace,omitempty"`
 
-	// Required
+	// +optional
 	AutoscalingRunnerSetName string `json:"autoscalingRunnerSetName,omitempty"`
 
-	// Required
+	// +optional
 	EphemeralRunnerSetName string `json:"ephemeralRunnerSetName,omitempty"`
 
-	// Required
-	// +kubebuilder:validation:Minimum:=0
+	// +kubebuilder:validation:Minimum=0
+	// +optional
 	MaxRunners int `json:"maxRunners,omitempty"`
 
-	// Required
-	// +kubebuilder:validation:Minimum:=0
+	// +kubebuilder:validation:Minimum=0
+	// +optional
 	MinRunners int `json:"minRunners,omitempty"`
 
-	// Required
+	// +optional
 	Image string `json:"image,omitempty"`
 
-	// Required
+	// +optional
 	ImagePullSecrets []corev1.LocalObjectReference `json:"imagePullSecrets,omitempty"`
 
 	// +optional
@@ -81,6 +112,9 @@ type AutoscalingListenerSpec struct {
 
 	// +optional
 	RoleBindingMetadata *ResourceMeta `json:"roleBindingMetadata,omitempty"`
+
+	// +optional
+	ListenerConfig *ListenerConfig `json:"listenerConfig,omitempty"`
 }
 
 // AutoscalingListenerStatus defines the observed state of AutoscalingListener
@@ -91,24 +125,26 @@ type AutoscalingListenerStatus struct{}
 // +kubebuilder:printcolumn:JSONPath=".spec.githubConfigUrl",name=GitHub Configure URL,type=string
 // +kubebuilder:printcolumn:JSONPath=".spec.autoscalingRunnerSetNamespace",name=AutoscalingRunnerSet Namespace,type=string
 // +kubebuilder:printcolumn:JSONPath=".spec.autoscalingRunnerSetName",name=AutoscalingRunnerSet Name,type=string
+// +kubebuilder:printcolumn:JSONPath=".spec.phase",name=Phase,type=string
 
 // AutoscalingListener is the Schema for the autoscalinglisteners API
 type AutoscalingListener struct {
-	metav1.TypeMeta   `json:",inline"`
+	metav1.TypeMeta `json:",inline"`
+	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   AutoscalingListenerSpec   `json:"spec,omitempty"`
+	// +optional
+	Spec AutoscalingListenerSpec `json:"spec,omitempty"`
+	// +optional
 	Status AutoscalingListenerStatus `json:"status,omitempty"`
 }
 
+// AutoscalingListenerList is a list of AutoscalingListener resources
 // +kubebuilder:object:root=true
 // AutoscalingListenerList contains a list of AutoscalingListener
 type AutoscalingListenerList struct {
 	metav1.TypeMeta `json:",inline"`
+	// +optional
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []AutoscalingListener `json:"items"`
-}
-
-func init() {
-	SchemeBuilder.Register(&AutoscalingListener{}, &AutoscalingListenerList{})
 }

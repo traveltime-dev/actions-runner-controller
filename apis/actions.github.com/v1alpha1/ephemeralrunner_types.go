@@ -29,7 +29,7 @@ const EphemeralRunnerContainerName = "runner"
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:JSONPath=".spec.githubConfigUrl",name="GitHub Config URL",type=string
 // +kubebuilder:printcolumn:JSONPath=".status.runnerId",name=RunnerId,type=number
-// +kubebuilder:printcolumn:JSONPath=".status.phase",name=Status,type=string
+// +kubebuilder:printcolumn:JSONPath=".status.phase",name=Phase,type=string
 // +kubebuilder:printcolumn:JSONPath=".status.jobRepositoryName",name=JobRepository,type=string
 // +kubebuilder:printcolumn:JSONPath=".status.jobWorkflowRef",name=JobWorkflowRef,type=string
 // +kubebuilder:printcolumn:JSONPath=".status.workflowRunId",name=WorkflowRunId,type=number
@@ -40,10 +40,13 @@ const EphemeralRunnerContainerName = "runner"
 
 // EphemeralRunner is the Schema for the ephemeralrunners API
 type EphemeralRunner struct {
-	metav1.TypeMeta   `json:",inline"`
+	metav1.TypeMeta `json:",inline"`
+	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   EphemeralRunnerSpec   `json:"spec,omitempty"`
+	// +optional
+	Spec EphemeralRunnerSpec `json:"spec,omitempty"`
+	// +optional
 	Status EphemeralRunnerStatus `json:"status,omitempty"`
 }
 
@@ -77,7 +80,7 @@ func (er *EphemeralRunner) GitHubConfigSecret() string {
 }
 
 func (er *EphemeralRunner) GitHubConfigUrl() string {
-	return er.Spec.GitHubConfigUrl
+	return er.Spec.GitHubConfigURL
 }
 
 func (er *EphemeralRunner) GitHubProxy() *ProxyConfig {
@@ -101,16 +104,16 @@ func (er *EphemeralRunner) VaultProxy() *ProxyConfig {
 
 // EphemeralRunnerSpec defines the desired state of EphemeralRunner
 type EphemeralRunnerSpec struct {
-	// +required
-	GitHubConfigUrl string `json:"githubConfigUrl,omitempty"`
+	// +optional
+	GitHubConfigURL string `json:"githubConfigUrl,omitempty"`
 
-	// +required
+	// +optional
 	GitHubConfigSecret string `json:"githubConfigSecret,omitempty"`
 
 	// +optional
 	GitHubServerTLS *TLSConfig `json:"githubServerTLS,omitempty"`
 
-	// +required
+	// +optional
 	RunnerScaleSetID int `json:"runnerScaleSetId,omitempty"`
 
 	// +optional
@@ -125,6 +128,7 @@ type EphemeralRunnerSpec struct {
 	// +optional
 	EphemeralRunnerConfigSecretMetadata *ResourceMeta `json:"ephemeralRunnerConfigSecretMetadata,omitempty"`
 
+	// +optional
 	corev1.PodTemplateSpec `json:",inline"`
 }
 
@@ -142,6 +146,10 @@ type EphemeralRunnerStatus struct {
 	//
 	// The PodSucceded phase should be set only when confirmed that EphemeralRunner
 	// actually executed the job and has been removed from the service.
+	//
+	// Running means a job has been assigned to this EphemeralRunner. It does not
+	// mean the runner is merely online and waiting for work; an idle registered
+	// runner stays Pending.
 	// +optional
 	Phase EphemeralRunnerPhase `json:"phase,omitempty"`
 	// +optional
@@ -181,11 +189,12 @@ type EphemeralRunnerStatus struct {
 type EphemeralRunnerPhase string
 
 const (
-	// EphemeralRunnerPhasePending is a phase set when the ephemeral runner is
-	// being provisioned and is not yet online.
+	// EphemeralRunnerPhasePending is a phase set while no job has been assigned to
+	// the ephemeral runner. It covers both a runner that is still being provisioned
+	// and one that is already online and registered but idle.
 	EphemeralRunnerPhasePending EphemeralRunnerPhase = "Pending"
-	// EphemeralRunnerPhaseRunning is a phase set when the ephemeral runner is online and
-	// waiting for a job to execute.
+	// EphemeralRunnerPhaseRunning is set once a job has been assigned to this
+	// ephemeral runner and it is executing that job.
 	EphemeralRunnerPhaseRunning EphemeralRunnerPhase = "Running"
 	// EphemeralRunnerPhaseSucceeded is a phase set when the ephemeral runner
 	// successfully executed the job and has been removed from the service.
@@ -218,8 +227,4 @@ type EphemeralRunnerList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []EphemeralRunner `json:"items"`
-}
-
-func init() {
-	SchemeBuilder.Register(&EphemeralRunner{}, &EphemeralRunnerList{})
 }

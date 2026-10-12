@@ -17,6 +17,8 @@ rules:
   - persistentvolumeclaims
   - pods
   - pods/finalizers
+  - secrets
+  - serviceaccounts
   verbs:
   - create
   - delete
@@ -42,27 +44,6 @@ rules:
   - pods/status
   verbs:
   - get
-- apiGroups:
-  - ""
-  resources:
-  - secrets
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - update
-  - watch
-- apiGroups:
-  - ""
-  resources:
-  - serviceaccounts
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - watch
 - apiGroups:
   - actions.github.com
   resources:
@@ -170,20 +151,12 @@ rules:
   - rbac.authorization.k8s.io
   resources:
   - rolebindings
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - watch
-- apiGroups:
-  - rbac.authorization.k8s.io
-  resources:
   - roles
   verbs:
   - create
   - delete
   - get
   - list
+  - patch
   - update
   - watch
