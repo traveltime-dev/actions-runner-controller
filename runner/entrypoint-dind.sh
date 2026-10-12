@@ -60,6 +60,11 @@ for process in "${processes[@]}"; do
     fi
 done
 
+# Grant the docker group access to dockerd's embedded containerd socket.
+# Logic lives in /usr/local/bin/grant-containerd-access.sh so the kube
+# manifests' init container can call the same script.
+/usr/local/bin/grant-containerd-access.sh
+
 if [ -n "${MTU}" ]; then
   sudo ifconfig docker0 mtu "${MTU}" up
 fi
