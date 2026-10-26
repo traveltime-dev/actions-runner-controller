@@ -53,6 +53,8 @@ RUN export ARCH=$(echo ${TARGETPLATFORM} | cut -d / -f2) \
     && curl -fLo runner.tar.gz https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-${ARCH}-${RUNNER_VERSION}.tar.gz \
     && tar xzf ./runner.tar.gz \
     && rm -f runner.tar.gz \
+    # Node.js 20 is end-of-life and no longer patched; the runner runs node20 actions on node24.
+    && rm -rf externals/node20 \
     && ./bin/installdependencies.sh \
     # libyaml-dev is required for ruby/setup-ruby action.
     # It is installed after installdependencies.sh and before removing /var/lib/apt/lists
